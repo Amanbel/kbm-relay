@@ -53,9 +53,30 @@ class Characteristic extends Interface {
   get Service() { return this._service; }
   get Flags() { return this._flags; }
   get Value() { return this._value; }
-  ReadValue() { return this._value; }
-  WriteValue(value) {
-    this._value = Buffer.from(value);
+  ReadValue(options = {}) {
+    let offset = 0;
+    if (options && options.offset) {
+      offset = options.offset.value !== undefined ? options.offset.value : options.offset;
+    }
+    if (offset > this._value.length) {
+      throw new DBusError('org.bluez.Error.InvalidOffset', 'Invalid offset');
+    }
+    return this._value.subarray(offset);
+  }
+  WriteValue(value, options = {}) {
+    let offset = 0;
+    if (options && options.offset) {
+      offset = options.offset.value !== undefined ? options.offset.value : options.offset;
+    }
+    const valBuf = Buffer.from(value);
+    if (offset === 0) {
+      this._value = valBuf;
+    } else {
+      if (offset > this._value.length) {
+        throw new DBusError('org.bluez.Error.InvalidOffset', 'Invalid offset');
+      }
+      this._value = Buffer.concat([this._value.subarray(0, offset), valBuf]);
+    }
     if (this.onWrite) this.onWrite(this._value);
   }
   StartNotify() { this.notifying = true; this.onNotifyChange(); }
@@ -102,7 +123,16 @@ class Descriptor extends Interface {
   get UUID() { return this._uuid; }
   get Characteristic() { return this._chr; }
   get Flags() { return this._flags; }
-  ReadValue() { return this._value; }
+  ReadValue(options = {}) {
+    let offset = 0;
+    if (options && options.offset) {
+      offset = options.offset.value !== undefined ? options.offset.value : options.offset;
+    }
+    if (offset > this._value.length) {
+      throw new DBusError('org.bluez.Error.InvalidOffset', 'Invalid offset');
+    }
+    return this._value.subarray(offset);
+  }
   dbusProps() {
     return {
       UUID: new Variant('s', this._uuid),
@@ -169,7 +199,7 @@ class Agent extends Interface {
   DisplayPasskey() {}
   RequestConfirmation() { this._gate(); }
   RequestAuthorization() { this._gate(); }
-  AuthorizeService() { this._gate(); }
+  AuthorizeService() {}
 }
 Agent.configureMembers({
   methods: {
@@ -246,8 +276,8 @@ class BleHid extends EventEmitter {
     const adapter = await bus.getProxyObject('org.bluez', adapterPath);
     this.adapterProps = adapter.getInterface('org.freedesktop.DBus.Properties');
     await this._setAdapter('Powered', 'b', true);
-    await this._setAdapter('Pairable', 'b', true);
-    await this._setAdapter('Alias', 's', DEVICE_NAME);
+    await this._setAdapter('Pairable', 'b', false);
+    await this._setAdapter('Discoverable', 'b', false);
 
     // 2. Export and register the GATT application.
     const { nodes, kb, mouse } = buildTree();
@@ -316,7 +346,12 @@ class BleHid extends EventEmitter {
   async setPairing(open) {
     clearTimeout(this._pairTimer);
     this.pairing = open;
-    try { await this._setAdapter('Discoverable', 'b', open); } catch (e) { console.error('[ble] setPairing failed:', e.stack || e); this.error = e.message; }
+    try {
+      await this._setAdapter('Pairable', 'b', open);
+    } catch (e) {
+      console.error('[ble] setPairing failed:', e.stack || e);
+      this.error = e.message;
+    }
     if (open) this._pairTimer = setTimeout(() => this.setPairing(false), PAIRING_WINDOW_MS);
     this.emit('state');
   }
