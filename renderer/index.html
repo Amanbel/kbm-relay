@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Keyboard Relay</title>
+<style>
+  :root {
+    --bg: #16181c;
+    --panel: #1d2026;
+    --line: #2b2f37;
+    --text: #e7e9ec;
+    --dim: #8b909b;
+    --local: #6b7280;
+    --keyboard: #4c8dff;
+    --mouse: #34c48a;
+    --both: #b17ef2;
+    --danger: #e06666;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Inter, sans-serif;
+    font-size: 14px;
+    user-select: none;
+  }
+  .wrap { padding: 18px 18px 14px; }
+
+  .heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+  .heading h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.2px; }
+  .heading .sub { font-size: 12px; color: var(--dim); }
+
+  /* Patch-bay style route diagram: two endpoints, a switchable line between them. */
+  .diagram {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .node { flex: 0 0 auto; text-align: center; width: 64px; }
+  .node .dot { width: 10px; height: 10px; border-radius: 50%; margin: 0 auto 6px; background: var(--dim); }
+  .node.on .dot { background: var(--current, var(--keyboard)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--current, var(--keyboard)) 20%, transparent); }
+  .node .label { font-size: 11px; color: var(--dim); }
+  .track { flex: 1; height: 2px; background: var(--line); position: relative; border-radius: 1px; overflow: hidden; }
+  .track .fill { position: absolute; inset: 0; width: 0%; background: var(--current, var(--keyboard)); transition: width 0.25s ease; }
+
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .mode-btn {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px 10px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mode-btn .swatch { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+  .mode-btn[data-mode="local"] .swatch { background: var(--local); }
+  .mode-btn[data-mode="keyboard"] .swatch { background: var(--keyboard); }
+  .mode-btn[data-mode="mouse"] .swatch { background: var(--mouse); }
+  .mode-btn[data-mode="both"] .swatch { background: var(--both); }
+  .mode-btn.active { border-color: currentColor; background: #22262e; }
+  .mode-btn[data-mode="local"].active { color: var(--local); }
+  .mode-btn[data-mode="keyboard"].active { color: var(--keyboard); }
+  .mode-btn[data-mode="mouse"].active { color: var(--mouse); }
+  .mode-btn[data-mode="both"].active { color: var(--both); }
+  .mode-btn .name { color: var(--text); }
+
+  .rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); padding: 2px 2px; }
+  .row .v { color: var(--text); }
+  .row .v.ok::before { content: "●"; color: var(--mouse); margin-right: 5px; font-size: 9px; }
+  .row .v.missing::before { content: "●"; color: var(--danger); margin-right: 5px; font-size: 9px; }
+  .row .v.wait::before { content: "●"; color: var(--dim); margin-right: 5px; font-size: 9px; }
+
+  .pair-btn {
+    width: 100%;
+    padding: 9px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    font-size: 12.5px;
+    margin-bottom: 8px;
+  }
+  .pair-btn.active { color: var(--keyboard); border-color: var(--keyboard); }
+
+  .hint { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.5; }
+  .error { font-size: 11.5px; color: var(--danger); background: #2a1e1e; border: 1px solid #4a2a2a; border-radius: 6px; padding: 8px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="heading">
+      <h1>Keyboard Relay</h1>
+      <span class="sub" id="connSub">—</span>
+    </div>
+
+    <div id="errBox"></div>
+
+    <div class="diagram">
+      <div class="node" id="nodeA"><div class="dot"></div><div class="label">PC A (this)</div></div>
+      <div class="track"><div class="fill" id="trackFill"></div></div>
+      <div class="node" id="nodeB"><div class="dot"></div><div class="label">PC B</div></div>
+    </div>
+
+    <div class="modes">
+      <button class="mode-btn" data-mode="local"><span class="swatch"></span><span class="name">Local only</span></button>
+      <button class="mode-btn" data-mode="both"><span class="swatch"></span><span class="name">Both to B</span></button>
+      <button class="mode-btn" data-mode="keyboard"><span class="swatch"></span><span class="name">Keyboard → B</span></button>
+      <button class="mode-btn" data-mode="mouse"><span class="swatch"></span><span class="name">Mouse → B</span></button>
+    </div>
+
+    <div class="rows">
+      <div class="row"><span>Keyboard device</span><span class="v" id="kbFound">—</span></div>
+      <div class="row"><span>Mouse device</span><span class="v" id="mouseFound">—</span></div>
+      <div class="row"><span>PC B connected</span><span class="v" id="bConnected">—</span></div>
+    </div>
+
+    <button class="pair-btn" id="pairBtn">Allow a new PC to pair (2 min)</button>
+
+    <div class="hint">Ctrl+Alt+Shift+L always snaps back to Local, even mid-relay.</div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const COLORS = { local: '#6b7280', keyboard: '#4c8dff', mouse: '#34c48a', both: '#b17ef2' };
+
+  document.querySelectorAll('.mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => window.kbmRelay.setMode(btn.dataset.mode));
+  });
+  $('pairBtn').addEventListener('click', () => {
+    const active = $('pairBtn').classList.contains('active');
+    window.kbmRelay.setPairing(!active);
+  });
+
+  function render(state) {
+    document.querySelectorAll('.mode-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.mode === state.mode);
+    });
+
+    const color = COLORS[state.mode] || COLORS.local;
+    const goingToB = state.mode !== 'local';
+    $('trackFill').style.setProperty('--current', color);
+    $('trackFill').style.width = goingToB ? '100%' : '0%';
+    $('nodeA').classList.toggle('on', true);
+    $('nodeA').style.setProperty('--current', color);
+    $('nodeB').classList.toggle('on', goingToB && state.ble.connected.length > 0);
+    $('nodeB').style.setProperty('--current', color);
+
+    $('kbFound').textContent = state.keyboardFound ? 'connected' : 'not found';
+    $('kbFound').className = 'v ' + (state.keyboardFound ? 'ok' : 'missing');
+    $('mouseFound').textContent = state.mouseFound ? 'connected' : 'not found';
+    $('mouseFound').className = 'v ' + (state.mouseFound ? 'ok' : 'missing');
+
+    const connected = state.ble.connected;
+    $('bConnected').textContent = connected.length ? connected.join(', ') : 'waiting';
+    $('bConnected').className = 'v ' + (connected.length ? 'ok' : 'wait');
+
+    $('connSub').textContent = state.mode === 'local' ? 'local' : (connected.length ? 'relaying' : 'no link yet');
+
+    $('pairBtn').classList.toggle('active', state.ble.pairing);
+    $('pairBtn').textContent = state.ble.pairing ? 'Pairing open — tap to cancel' : 'Allow a new PC to pair (2 min)';
+
+    $('errBox').innerHTML = state.lastError || state.ble.bleError
+      ? `<div class="error">${state.lastError || state.ble.bleError}</div>` : '';
+  }
+
+  window.kbmRelay.onState(render);
+  window.kbmRelay.getState().then(render);
+</script>
+</body>
+</html>

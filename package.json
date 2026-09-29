@@ -1,0 +1,18 @@
+{
+  "name": "kbm-relay",
+  "version": "0.1.0",
+  "description": "Relay a wired keyboard and/or mouse to another PC over Bluetooth LE HID (Linux host)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:nosandbox": "electron . --no-sandbox",
+    "start:noshm": "electron . --no-sandbox --disable-dev-shm-usage"
+  },
+  "dependencies": {
+    "dbus-next": "^0.10.2"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
+
